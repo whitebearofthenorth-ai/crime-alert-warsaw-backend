@@ -9,7 +9,7 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
-// 1. Inicjalizacja Klientów z Zmiennych Środowiskowych
+// 1. Inicjalizacja Klientów ze Zmiennych Środowiskowych
 const supabase = createClient(
   process.env.SUPABASE_URL,
   process.env.SUPABASE_ANON_KEY
@@ -21,16 +21,16 @@ const groq = new Groq({
 
 const rssParser = new Parser();
 
-// Lista źródeł RSS (możesz dopisać kolejne)
+// Lista źródeł RSS
 const RSS_FEEDS = [
   'https://tvn24.pl/tvnwarszawa.xml'
 ];
 
 const processedArticles = new Set();
 
-// Lista poprawnych dzielnic Warszawy
+// Poprawna lista 18 dzielnic Warszawy
 const WARSZAWA_DISTRICTS = [
-  'Białołęka', 'Bielany', 'Bremowo', 'Krowodrza', 'Mokotów', 'Ochota',
+  'Bemowo', 'Białołęka', 'Bielany', 'Mokotów', 'Ochota',
   'Praga-Południe', 'Praga-Północ', 'Rembertów', 'Śródmieście',
   'Targówek', 'Ursus', 'Ursynów', 'Wawer', 'Wesoła', 'Wilanów',
   'Włochy', 'Wola', 'Żoliborz'
@@ -100,6 +100,11 @@ app.post('/api/ingest-alert', async (req, res) => {
 
   const result = await processAndStoreAlert(rawText, sourceUrl);
   res.json({ status: 'ok', processed: !!result });
+});
+
+// Endpoint zdrowia (Healthcheck) - przydatny m.in. dla UptimeRobota
+app.get('/health', (req, res) => {
+  res.send('OK');
 });
 
 // 4. Zadanie Cron Bota RSS (Uruchamiane co 15 minut)
