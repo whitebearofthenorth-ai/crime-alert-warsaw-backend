@@ -163,7 +163,8 @@ cron.schedule('*/15 * * * *', () => {
 
 // 5. Uruchomienie Serwera
 const PORT = process.env.PORT || 10000;
-app.listen(PORT, () => {
+
+app.listen(PORT, '0.0.0.0', () => {
   console.log(`Serwer backendu z botem RSS działa na porcie ${PORT}`);
   runRssBot();
 });
