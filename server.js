@@ -19,14 +19,22 @@ const groq = new Groq({
   apiKey: process.env.GROQ_API_KEY
 });
 
-const rssParser = new Parser();
+// POPRAWKA: Dodano nagłówek User-Agent, aby zapobiec blokadom 403 przez serwery RSS
+const rssParser = new Parser({
+  requestOptions: {
+    headers: {
+      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+      'Accept': 'application/rss+xml, application/xml, text/xml; q=0.1'
+    }
+  }
+});
 
-// Lista źródeł RSS
+// POPRAWKA: Dodano brakujące przecinki w tablicy
 const RSS_FEEDS = [
-  'https://tvn24.pl/tvnwarszawa.xml'
+  'https://tvn24.pl/tvnwarszawa.xml',
+  'https://warszawawpigulce.pl/feed/',
+  'https://tustolica.pl/rss.php'
 ];
-
-const processedArticles = new Set();
 
 // Poprawna lista 18 dzielnic Warszawy
 const WARSZAWA_DISTRICTS = [
@@ -68,10 +76,8 @@ Tekst do analizy:
 
     const parsedData = JSON.parse(completion.choices[0].message.content);
     
-    // Log diagnostyczny w panelu Rendera
     console.log('Odpowiedź AI:', JSON.stringify(parsedData));
 
-    // Weryfikacja wartości is_relevant
     const isRelevant = parsedData.is_relevant === true || parsedData.is_relevant === 'true';
 
     if (!isRelevant || parsedData.district === 'Nieokreślona') {
@@ -104,7 +110,6 @@ Tekst do analizy:
 }
 
 // 3. Endpointy API
-
 app.post('/api/ingest-alert', async (req, res) => {
   const { rawText, sourceUrl } = req.body;
   if (!rawText) {
@@ -128,15 +133,25 @@ async function runRssBot() {
       const feed = await rssParser.parseURL(feedUrl);
 
       for (const item of feed.items) {
-        const articleId = item.guid || item.link;
+        const sourceUrl = item.link;
 
-        if (processedArticles.has(articleId)) continue;
+        if (!sourceUrl) continue;
+
+        // POPRAWKA: Sprawdzanie duplikatów bezpośrednio w Supabase zamiast w zmiennej RAM
+        const { data: existingAlert } = await supabase
+          .from('alerts')
+          .select('id')
+          .eq('raw_source_url', sourceUrl)
+          .maybeSingle();
+
+        if (existingAlert) {
+          continue; // Artykuł był już przetwarzany
+        }
 
         const rawContent = `${item.title}. ${item.contentSnippet || item.content || ''}`;
         console.log(`Bot RSS wykrył nowy wpis: ${item.title}`);
 
-        await processAndStoreAlert(rawContent, item.link);
-        processedArticles.add(articleId);
+        await processAndStoreAlert(rawContent, sourceUrl);
       }
     } catch (err) {
       console.error(`Błąd bota RSS dla ${feedUrl}:`, err.message);
