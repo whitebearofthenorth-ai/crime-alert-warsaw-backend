@@ -39,18 +39,18 @@ const WARSZAWA_DISTRICTS = [
 // 2. Funkcja Analizująca Tekst przez AI i Zapisująca do Supabase
 async function processAndStoreAlert(rawText, sourceUrl) {
   const prompt = `
-Jesteś analitykiem bezpieczeństwa. Twoim zadaniem jest przeanalizowanie tekstu wiadomości i wyciągnięcie informacji o zdarzeniu kryminalnym, wypadku lub zagrożeniu w Warszawie.
+Jesteś analitykiem bezpieczeństwa publicznego. Twoim zadaniem jest przeanalizowanie tekstu wiadomości i wyciągnięcie informacji wyłącznie o zdarzeniach kryminalnych oraz ciężkich zagrożeniach dla życia i zdrowia mieszkańców w Warszawie.
 
 ZASADY:
-1. Jeśli tekst dotyczy przestępstwa (np. morderstwo, pobicie, kradzież), wypadku drogowego, pożaru lub innego zagrożenia w Warszawie -> ustaw "is_relevant": true.
-2. W przeciwnym razie ustaw "is_relevant": false.
+1. Jeśli tekst dotyczy przestępstwa lub zagrożenia kryminalnego w Warszawie (np. napaść z bronią, strzelanina, zamach bombowy, morderstwo, gwałt, pobicie, kradzież lub rozbój) -> ustaw "is_relevant": true.
+2. IGNORUJ całkowicie zwykłe wypadki drogowe, kolizje, utrudnienia w ruchu, awarie techniczne oraz pożary (chyba że wynikają z zamachu/podpalenia kryminalnego) -> dla nich ustaw "is_relevant": false.
 
 Wymagany format JSON:
 {
   "is_relevant": true lub false,
   "title": "krótki tytuł po polsku",
   "summary": "streszczenie w 1-2 zdaniach",
-  "category": "jedna z: [napasc_bron, morderstwo, gwalt, pobicie, kradziez_rozboj, wypadek, pozar, oszustwo]",
+  "category": "jedna z dokładnie wybranych opcji: [napasc_bron, strzelanina, zamach_bombowy, morderstwo, gwalt, pobicie, kradziez_rozboj]",
   "district": "jedna z listy: ${WARSZAWA_DISTRICTS.join(', ')} lub Nieokreślona",
   "address_text": "ulica/punkt lub null"
 }
@@ -71,7 +71,7 @@ Tekst do analizy:
     // Log diagnostyczny w panelu Rendera
     console.log('Odpowiedź AI:', JSON.stringify(parsedData));
 
-    // Weryfikacja wartości is_relevant (boolean lub string)
+    // Weryfikacja wartości is_relevant
     const isRelevant = parsedData.is_relevant === true || parsedData.is_relevant === 'true';
 
     if (!isRelevant || parsedData.district === 'Nieokreślona') {
@@ -105,7 +105,6 @@ Tekst do analizy:
 
 // 3. Endpointy API
 
-// Endpoint do testowania ręcznego i wywołań zewnętrznych
 app.post('/api/ingest-alert', async (req, res) => {
   const { rawText, sourceUrl } = req.body;
   if (!rawText) {
@@ -116,12 +115,11 @@ app.post('/api/ingest-alert', async (req, res) => {
   res.json({ status: 'ok', processed: !!result });
 });
 
-// Endpoint /health zapobiegający usypianiu na Renderze (dla UptimeRobot)
 app.get('/health', (req, res) => {
   res.send('OK');
 });
 
-// 4. Zadanie Cron Bota RSS (Uruchamiane co 15 minut)
+// 4. Zadanie Cron Bota RSS (co 15 minut)
 async function runRssBot() {
   console.log(`[${new Date().toLocaleTimeString()}] Bot RSS: Sprawdzanie kanałów...`);
 
@@ -146,12 +144,11 @@ async function runRssBot() {
   }
 }
 
-// Rejestracja cyklicznego wykonywania bota co 15 minut
 cron.schedule('*/15 * * * *', () => {
   runRssBot();
 });
 
-// 5. Uruchomienie Serwera HTTP
+// 5. Uruchomienie Serwera
 const PORT = process.env.PORT || 10000;
 app.listen(PORT, () => {
   console.log(`Serwer backendu z botem RSS działa na porcie ${PORT}`);
