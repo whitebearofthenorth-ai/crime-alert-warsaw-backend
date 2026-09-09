@@ -50,7 +50,7 @@ Wymagany format JSON:
   "is_relevant": true lub false,
   "title": "krótki tytuł po polsku",
   "summary": "streszczenie w 1-2 zdaniach",
-  "category": "jedna z: [pobicie, kradzież, morderstwo, wypadek, pożar, inne]",
+  "category": "jedna z: [napasc_bron, morderstwo, gwalt, pobicie, kradziez_rozboj, wypadek, pozar, oszustwo]",
   "district": "jedna z listy: ${WARSZAWA_DISTRICTS.join(', ')} lub Nieokreślona",
   "address_text": "ulica/punkt lub null"
 }
@@ -68,14 +68,14 @@ Tekst do analizy:
 
     const parsedData = JSON.parse(completion.choices[0].message.content);
     
-    // Log diagnostyczny - widoczny w zakładce Logs na Renderze
+    // Log diagnostyczny w panelu Rendera
     console.log('Odpowiedź AI:', JSON.stringify(parsedData));
 
-    // Elastyczna weryfikacja wartości is_relevant (boolean lub string)
+    // Weryfikacja wartości is_relevant (boolean lub string)
     const isRelevant = parsedData.is_relevant === true || parsedData.is_relevant === 'true';
 
     if (!isRelevant || parsedData.district === 'Nieokreślona') {
-      console.log(`[POMINIĘTO] Istotne: ${isRelevant}, Dzielnica: ${parsedData.district}`);
+      console.log(`[POMINIĘTO] Relevant: ${isRelevant}, Dzielnica: ${parsedData.district}`);
       return null;
     }
 
@@ -155,6 +155,5 @@ cron.schedule('*/15 * * * *', () => {
 const PORT = process.env.PORT || 10000;
 app.listen(PORT, () => {
   console.log(`Serwer backendu z botem RSS działa na porcie ${PORT}`);
-  // Pierwsze wykonanie bota od razu przy starcie
   runRssBot();
 });
