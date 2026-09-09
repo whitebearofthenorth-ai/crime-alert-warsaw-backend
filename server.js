@@ -19,7 +19,7 @@ const groq = new Groq({
   apiKey: process.env.GROQ_API_KEY
 });
 
-// POPRAWKA: Dodano nagłówek User-Agent, aby zapobiec blokadom 403 przez serwery RSS
+// Emulacja przeglądarki w nagłówkach HTTP dla RSS (unikamy błędu 403)
 const rssParser = new Parser({
   requestOptions: {
     headers: {
@@ -29,14 +29,13 @@ const rssParser = new Parser({
   }
 });
 
-// POPRAWKA: Dodano brakujące przecinki w tablicy
+// Zweryfikowana lista aktywnych źródeł RSS
 const RSS_FEEDS = [
   'https://tvn24.pl/tvnwarszawa.xml',
-  'https://warszawawpigulce.pl/feed/',
-  'https://tustolica.pl/rss.php'
+  'https://warszawawpigulce.pl/feed/'
 ];
 
-// Poprawna lista 18 dzielnic Warszawy
+// Wykaz 18 dzielnic Warszawy
 const WARSZAWA_DISTRICTS = [
   'Bemowo', 'Białołęka', 'Bielany', 'Mokotów', 'Ochota',
   'Praga-Południe', 'Praga-Północ', 'Rembertów', 'Śródmieście',
@@ -44,7 +43,7 @@ const WARSZAWA_DISTRICTS = [
   'Włochy', 'Wola', 'Żoliborz'
 ];
 
-// 2. Funkcja Analizująca Tekst przez AI i Zapisująca do Supabase
+// 2. Analiza Tekstu przez Groq AI i Zapis do Supabase
 async function processAndStoreAlert(rawText, sourceUrl) {
   const prompt = `
 Jesteś analitykiem bezpieczeństwa publicznego. Twoim zadaniem jest przeanalizowanie tekstu wiadomości i wyciągnięcie informacji wyłącznie o zdarzeniach kryminalnych oraz ciężkich zagrożeniach dla życia i zdrowia mieszkańców w Warszawie.
@@ -70,7 +69,7 @@ Tekst do analizy:
   try {
     const completion = await groq.chat.completions.create({
       messages: [{ role: 'user', content: prompt }],
-      model: 'llama-3.1-8b-instant',
+      model: 'llama-3.3-70b-versatile',
       response_format: { type: 'json_object' }
     });
 
@@ -85,7 +84,7 @@ Tekst do analizy:
       return null;
     }
 
-    // Zapis do Supabase
+    // Zapis zaakceptowanego alertu do Supabase
     const { data, error } = await supabase
       .from('alerts')
       .insert([
@@ -137,7 +136,7 @@ async function runRssBot() {
 
         if (!sourceUrl) continue;
 
-        // POPRAWKA: Sprawdzanie duplikatów bezpośrednio w Supabase zamiast w zmiennej RAM
+        // Weryfikacja duplikatów w bazie Supabase
         const { data: existingAlert } = await supabase
           .from('alerts')
           .select('id')
@@ -145,7 +144,7 @@ async function runRssBot() {
           .maybeSingle();
 
         if (existingAlert) {
-          continue; // Artykuł był już przetwarzany
+          continue; // Wpis już istnieje w bazie, pomijamy
         }
 
         const rawContent = `${item.title}. ${item.contentSnippet || item.content || ''}`;
