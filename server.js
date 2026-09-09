@@ -39,31 +39,43 @@ const WARSZAWA_DISTRICTS = [
 // 2. Funkcja Analizująca Tekst przez AI i Zapisująca do Supabase
 async function processAndStoreAlert(rawText, sourceUrl) {
   const prompt = `
-Przeanalizuj poniższy tekst wiadomości i wyciągnij z niego informacje o zdarzeniu kryminalnym lub zagrożeniu bezpieczeństwa w Warszawie.
+Jesteś analitykiem bezpieczeństwa. Twoim zadaniem jest przeanalizowanie tekstu wiadomości i wyciągnięcie informacji o zdarzeniu kryminalnym, wypadku lub zagrożeniu w Warszawie.
 
-Wymagane pola w formacie JSON:
-- "is_relevant": true (jeśli tekst dotyczy przestępstwa, wypadku, pożaru lub zagrożenia w Warszawie) lub false
-- "title": krótki, zwięzły tytuł zdarzenia (po polsku)
-- "summary": streszczenie w 1-2 zdaniach
-- "category": jedna z kategorii: ["pobicie", "kradzież", "morderstwo", "wypadek", "pożar", "inne"]
-- "district": dokladna nazwa dzielnicy Warszawy z listy: ${WARSZAWA_DISTRICTS.join(', ')} lub "Nieokreślona"
-- "address_text": ulica lub charakterystyczny punkt (jeśli występuje w tekście)
+ZASADY:
+1. Jeśli tekst dotyczy przestępstwa (np. morderstwo, pobicie, kradzież), wypadku drogowego, pożaru lub innego zagrożenia w Warszawie -> ustaw "is_relevant": true.
+2. W przeciwnym razie ustaw "is_relevant": false.
 
-Tekst wiadomości:
+Wymagany format JSON:
+{
+  "is_relevant": true lub false,
+  "title": "krótki tytuł po polsku",
+  "summary": "streszczenie w 1-2 zdaniach",
+  "category": "jedna z: [pobicie, kradzież, morderstwo, wypadek, pożar, inne]",
+  "district": "jedna z listy: ${WARSZAWA_DISTRICTS.join(', ')} lub Nieokreślona",
+  "address_text": "ulica/punkt lub null"
+}
+
+Tekst do analizy:
 "${rawText}"
   `;
 
   try {
     const completion = await groq.chat.completions.create({
       messages: [{ role: 'user', content: prompt }],
-      model: 'llama-3.3-70b-versatile',
+      model: 'llama-3.1-8b-instant',
       response_format: { type: 'json_object' }
     });
 
     const parsedData = JSON.parse(completion.choices[0].message.content);
+    
+    // Log diagnostyczny - widoczny w zakładce Logs na Renderze
+    console.log('Odpowiedź AI:', JSON.stringify(parsedData));
 
-    if (!parsedData.is_relevant || parsedData.district === 'Nieokreślona') {
-      console.log('Pominięto wpis: brak istotnego zdarzenia lub nieokreślona dzielnica.');
+    // Elastyczna weryfikacja wartości is_relevant (boolean lub string)
+    const isRelevant = parsedData.is_relevant === true || parsedData.is_relevant === 'true';
+
+    if (!isRelevant || parsedData.district === 'Nieokreślona') {
+      console.log(`[POMINIĘTO] Istotne: ${isRelevant}, Dzielnica: ${parsedData.district}`);
       return null;
     }
 
@@ -91,7 +103,9 @@ Tekst wiadomości:
   }
 }
 
-// 3. Endpoint API dla Zgłoszeń
+// 3. Endpointy API
+
+// Endpoint do testowania ręcznego i wywołań zewnętrznych
 app.post('/api/ingest-alert', async (req, res) => {
   const { rawText, sourceUrl } = req.body;
   if (!rawText) {
@@ -102,7 +116,7 @@ app.post('/api/ingest-alert', async (req, res) => {
   res.json({ status: 'ok', processed: !!result });
 });
 
-// Endpoint zdrowia (Healthcheck) - przydatny m.in. dla UptimeRobota
+// Endpoint /health zapobiegający usypianiu na Renderze (dla UptimeRobot)
 app.get('/health', (req, res) => {
   res.send('OK');
 });
@@ -132,15 +146,15 @@ async function runRssBot() {
   }
 }
 
-// Rejestracja cyklicznego wykonywania bota
+// Rejestracja cyklicznego wykonywania bota co 15 minut
 cron.schedule('*/15 * * * *', () => {
   runRssBot();
 });
 
 // 5. Uruchomienie Serwera HTTP
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.PORT || 10000;
 app.listen(PORT, () => {
   console.log(`Serwer backendu z botem RSS działa na porcie ${PORT}`);
-  // Pierwsze wykonanie bota od razu po starcie serwera
+  // Pierwsze wykonanie bota od razu przy starcie
   runRssBot();
 });
