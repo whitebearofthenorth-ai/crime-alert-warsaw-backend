@@ -1,7 +1,7 @@
 import express from 'express';
 import cors from 'cors';
 import { createClient } from '@supabase/supabase-js';
-import Groq from 'groq-sdk';
+import { GoogleGenerativeAI } from '@google/generative-ai';
 import Parser from 'rss-parser';
 import cron from 'node-cron';
 
@@ -9,17 +9,20 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
-// 1. Inicjalizacja Klientów ze Zmiennych Środowiskowych
+// 1. Inicjalizacja Klientów
 const supabase = createClient(
   process.env.SUPABASE_URL,
   process.env.SUPABASE_ANON_KEY
 );
 
-const groq = new Groq({
-  apiKey: process.env.GROQ_API_KEY
+// Inicjalizacja Google Gemini API (zastępuje Groq)
+const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+const model = genAI.getGenerativeModel({
+  model: 'gemini-1.5-flash',
+  generationConfig: { responseMimeType: 'application/json' }
 });
 
-// Emulacja przeglądarki w nagłówkach HTTP dla RSS (unikamy błędu 403)
+// Emulacja przeglądarki w nagłówkach HTTP dla RSS (ochrona przed blokadą 403)
 const rssParser = new Parser({
   requestOptions: {
     headers: {
@@ -29,7 +32,7 @@ const rssParser = new Parser({
   }
 });
 
-// Zweryfikowana lista aktywnych źródeł RSS
+// Aktywne źródła RSS
 const RSS_FEEDS = [
   'https://tvn24.pl/tvnwarszawa.xml',
   'https://warszawawpigulce.pl/feed/'
@@ -43,7 +46,7 @@ const WARSZAWA_DISTRICTS = [
   'Włochy', 'Wola', 'Żoliborz'
 ];
 
-// 2. Analiza Tekstu przez Groq AI i Zapis do Supabase
+// 2. Analiza Tekstu przez Gemini AI i Zapis do Supabase
 async function processAndStoreAlert(rawText, sourceUrl) {
   const prompt = `
 Jesteś analitykiem bezpieczeństwa publicznego. Twoim zadaniem jest przeanalizowanie tekstu wiadomości i wyciągnięcie informacji wyłącznie o zdarzeniach kryminalnych oraz ciężkich zagrożeniach dla życia i zdrowia mieszkańców w Warszawie.
@@ -52,7 +55,7 @@ ZASADY:
 1. Jeśli tekst dotyczy przestępstwa lub zagrożenia kryminalnego w Warszawie (np. napaść z bronią, strzelanina, zamach bombowy, morderstwo, gwałt, pobicie, kradzież lub rozbój) -> ustaw "is_relevant": true.
 2. IGNORUJ całkowicie zwykłe wypadki drogowe, kolizje, utrudnienia w ruchu, awarie techniczne oraz pożary (chyba że wynikają z zamachu/podpalenia kryminalnego) -> dla nich ustaw "is_relevant": false.
 
-Wymagany format JSON:
+Wymagany format wyjściowy to czysty JSON o strukturze:
 {
   "is_relevant": true lub false,
   "title": "krótki tytuł po polsku",
@@ -67,13 +70,9 @@ Tekst do analizy:
   `;
 
   try {
-    const completion = await groq.chat.completions.create({
-      messages: [{ role: 'user', content: prompt }],
-      model: 'llama-3.3-70b-versatile',
-      response_format: { type: 'json_object' }
-    });
-
-    const parsedData = JSON.parse(completion.choices[0].message.content);
+    const result = await model.generateContent(prompt);
+    const responseText = result.response.text();
+    const parsedData = JSON.parse(responseText);
     
     console.log('Odpowiedź AI:', JSON.stringify(parsedData));
 
@@ -84,7 +83,7 @@ Tekst do analizy:
       return null;
     }
 
-    // Zapis zaakceptowanego alertu do Supabase
+    // Zapis do Supabase
     const { data, error } = await supabase
       .from('alerts')
       .insert([
@@ -144,7 +143,7 @@ async function runRssBot() {
           .maybeSingle();
 
         if (existingAlert) {
-          continue; // Wpis już istnieje w bazie, pomijamy
+          continue;
         }
 
         const rawContent = `${item.title}. ${item.contentSnippet || item.content || ''}`;
