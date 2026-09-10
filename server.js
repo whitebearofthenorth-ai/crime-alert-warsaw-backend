@@ -23,10 +23,10 @@ if (!SUPABASE_URL || !SUPABASE_ANON_KEY || !GEMINI_API_KEY) {
 const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 const rssParser = new Parser();
 
-// Inicjalizacja Google Gemini API (model gemini-3.6-flash)
+// Inicjalizacja Google Gemini API (gemini-2.5-flash')
 const genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
 const model = genAI.getGenerativeModel({
-  model: 'gemini-3.6-flash',
+  model: 'gemini-2.5-flash',
   generationConfig: { responseMimeType: 'application/json' }
 });
 
