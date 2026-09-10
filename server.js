@@ -23,7 +23,7 @@ if (!SUPABASE_URL || !SUPABASE_ANON_KEY || !GEMINI_API_KEY) {
 const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 const rssParser = new Parser();
 
-// Inicjalizacja Google Gemini API (gemini-2.5-flash')
+// Inicjalizacja Google Gemini API
 const genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
 const model = genAI.getGenerativeModel({
   model: 'gemini-3.6-flash',
@@ -36,6 +36,14 @@ const WARSZAWA_DISTRICTS = [
   'Praga-Południe', 'Praga-Północ', 'Rembertów', 'Śródmieście', 
   'Targówek', 'Ursus', 'Ursynów', 'Wawer', 'Wesoła', 
   'Wilanów', 'Włochy', 'Wola', 'Żoliborz', 'A2 / S2', 'Nieokreślona'
+];
+
+// Słowa kluczowe do wstępnego odsiewania (chronią darmowy limit API Gemini)
+const CRIME_KEYWORDS = [
+  'policja', 'policjanci', 'strzały', 'broń', 'napad', 'pobicie', 
+  'zabójstwo', 'morderstwo', 'zwłoki', 'ciało', 'areszt', 'zatrzyman', 
+  'kradzież', 'rozbój', 'gwałt', 'nożownik', 'pościg', 'awantura', 
+  'sprawca', 'poszukiwan', 'kryminal', 'strzelał', 'podpalen'
 ];
 
 // Kanały RSS do Monitorowania
@@ -81,7 +89,7 @@ Tekst do analizy:
       const isRelevant = parsedData.is_relevant === true || parsedData.is_relevant === 'true';
 
       if (!isRelevant || parsedData.district === 'Nieokreślona') {
-        console.log(`[POMINIĘTO] Relevant: ${isRelevant}, Dzielnica: ${parsedData.district}`);
+        console.log(`[POMINIĘTO PRZEZ AI] Relevant: ${isRelevant}, Dzielnica: ${parsedData.district}`);
         return null;
       }
 
@@ -116,11 +124,11 @@ Tekst do analizy:
   }
 }
 
-// 3. Zadanie Cron dla Bota RSS
+// 3. Zadanie Cron dla Bota RSS (Uruchamiane co 20 minut)
 async function runRssBot() {
   console.log(`[${new Date().toLocaleTimeString()}] Bot RSS: Sprawdzanie kanałów...`);
 
-  // Przetwarzaj tylko wpisy z ostatnich 2 godzin, aby uniknąć analizowania starej historii
+  // Przetwarzaj tylko wpisy z ostatnich 2 godzin
   const TWO_HOURS_AGO = new Date(Date.now() - 2 * 60 * 60 * 1000);
 
   for (const feedUrl of RSS_FEEDS) {
@@ -137,7 +145,16 @@ async function runRssBot() {
           continue;
         }
 
-        // 2. Weryfikacja duplikatów w bazie Supabase
+        // 2. Wstępne filtrowanie po słowach kluczowych (Ochrona limitu AI)
+        const fullText = `${item.title} ${item.contentSnippet || item.content || ''}`.toLowerCase();
+        const hasCrimeKeyword = CRIME_KEYWORDS.some(keyword => fullText.includes(keyword));
+
+        if (!hasCrimeKeyword) {
+          // Artykuł nie dotyczy kryminału (np. podatki, śmieci, ZUS) – nie obciążamy AI!
+          continue;
+        }
+
+        // 3. Weryfikacja duplikatów w bazie Supabase
         const { data: existingAlert } = await supabase
           .from('alerts')
           .select('id')
@@ -149,9 +166,9 @@ async function runRssBot() {
         }
 
         const rawContent = `${item.title}. ${item.contentSnippet || item.content || ''}`;
-        console.log(`Bot RSS wykrył nowy wpis: ${item.title}`);
+        console.log(`Bot RSS wykrył potencjalny wpis kryminalny: ${item.title}`);
 
-        // Przetwarzanie wiadomości i opóźnienie 12 sekund dla bezpieczeństwa limitów API
+        // Przetwarzanie wiadomości i opóźnienie 12 sekund
         await processAndStoreAlert(rawContent, sourceUrl);
         await delay(12000);
       }
